@@ -48,7 +48,7 @@ set_module_variables() {
     && spacer \
     && echo "Setting the module variables ..."
 
-  modules_repo_url="git@github.com:MassMedicalSociety/cicd-templates.git"
+  modules_repo_url="ADD TEMPLATES GIT REPO HERE"
   modules_repo_name="cicd-templates"
   clone_directory="/tmp/github_terraform_templates"
   clone_path="${clone_directory}/${modules_repo_name}"
