@@ -1,11 +1,21 @@
 #!/bin/sh
 
-tfstack_version='v0.44.1'
+tfstack_version='v0.45'
 management_method=tfstack-${tfstack_version}
 
 ##todo:
  #deal with a repo with zero commits
- #add terraform import function?
+ #allow arbitrary flags and argumeents with --
+ #tfstack apply should prompt, to allow a review of the planfile, unless a -y argument is provided
+ #remove 'name' tag from all_resources_tags file
+ # --redirect stock terraform output to clarify and avoid confusion
+ #   --specifically the 'terraform apply planfile' that gets outputted after tfstack -p
+ #have tfstack check to see if it's the latest version
+ #add list of approved 'product' tags to the all_resources_common_tags file
+ #ignore string EXAMPLE if commented
+
+##todo done:
+ #add terraform import function?  <--done?
 
 spacer() {
   echo "======================================================================="
@@ -16,7 +26,19 @@ verbose_check() {
   echo $@ | grep -q "\-\-verbose" \
     && verbose="true"
 }
-  
+
+custom_arguments() {
+  arg_string=""
+  custom_args=""
+
+  for i in $@ ; do \
+    arg_string="$arg_string$i"
+  done
+
+  custom_args=$(echo $arg_string |awk -F '--' '{print $2}')
+}
+ 
+ 
 verify_aws_profile_exists() {
   grep -q ${profile} ~/.aws/credentials \
     || { echo "Profile ${profile} does not exist, please check your aws credentials file." \
@@ -48,7 +70,7 @@ set_module_variables() {
     && spacer \
     && echo "Setting the module variables ..."
 
-  modules_repo_url="ADD TEMPLATES GIT REPO HERE"
+  modules_repo_url="git@github.com:MassMedicalSociety/cicd-templates.git"
   modules_repo_name="cicd-templates"
   clone_directory="/tmp/github_terraform_templates"
   clone_path="${clone_directory}/${modules_repo_name}"
@@ -142,7 +164,6 @@ verify_common_tfvars_file_values(){
   [[ -n ${product} ]]     || { echo "Value of \"product\" is null, please fix." && exit 1 ; }
   [[ -n ${environment} ]] || { echo "Value of \"environment\" is null, please fix." && exit 1 ; }
   [[ -n ${owner} ]]       || { echo "Value of \"owner\" is null, please fix." && exit 1 ; }
-  [[ -n ${name} ]]        || { echo "Value of \"name\" is null, please fix." && exit 1 ; }
 }
 
 set_aws_variables() {
@@ -156,7 +177,8 @@ set_aws_variables() {
     --profile ${profile} \
     --region ${region} \
     | grep Value \
-    | cut -d\" -f 4)
+    | cut -d\" -f 4) \
+    || { echo "No state bucket found" && exit 1 ;}
 }
 
 display_variables() {
@@ -270,6 +292,7 @@ terraform_init() {
     && echo "Running terraform init ..."
 
   prereqs_terraform $@
+  custom_arguments $@
 
   echo "----- terraform init -------"
   terraform init \
@@ -279,19 +302,18 @@ terraform_init() {
     -backend-config="profile=${profile}" \
     -backend-config="key=${backend_key}" \
     -reconfigure \
-    -upgrade \
+    $custom_args \
       || { echo "Terraform init failed." && exit 1 ; }
 }
 
 terraform_plan() {
-  terraform_init $@
-
-  terraform_validate
-
   [[ "${verbose}" == "true" ]] \
     && spacer \
     && echo "Running terraform plan ..."
 
+  #terraform_init $@
+  custom_arguments $@
+  terraform_validate
   prereqs_terraform $@
 
   echo "----- terraform plan -------"
@@ -302,19 +324,71 @@ terraform_plan() {
     -var "git_repo_name=${git_repo_name}" \
     -var "git_repo_path=${git_repo_path}" \
     -var "profile=${profile}" \
+    $custom_args \
     -out ${plan_file} 
 }
 
-terraform_apply() {
-  terraform_init $@
-  terraform_plan $@
+terraform_import() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running terraform import ..."
 
+  #terraform_init $@
+  custom_arguments $@
+  terraform_validate
+  prereqs_terraform $@
+
+  import_address=$3
+  import_id=$4
+  echo "Address: $import_address"
+  echo "Id:      $import_id"
+
+  echo "----- terraform import -------"
+  terraform import \
+    -var-file=${env_tfvars_file} \
+    -var "management_method=${management_method}" \
+    -var "git_repo_name=${git_repo_name}" \
+    -var "git_repo_path=${git_repo_path}" \
+    -var "profile=${profile}" \
+    ${import_address} ${import_id}
+}
+
+terraform_apply() {
   [[ "${verbose}" == "true" ]] \
     && spacer \
     && echo "Running terraform apply ..."
 
-  prereqs_terraform $@
+  #terraform_init $@
+  #terraform_plan $@
   #check_uncommitted $@
+  prereqs_terraform $@
+  custom_arguments $@
+
+  ##allow an 'auto_apply' option
+  auto_apply="false"
+  while (( $# )); do
+    case "$1" in
+      -y | -yes)
+        auto_apply="true"
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  ##check if -apply-auto was set from cli:
+  [ "$auto_apply_prompt" == "true" ] \
+    && auto_apply="true"
+
+  ##verify auto-apply:
+  [ "$auto_apply" == "true" ] \
+    && apply_prompt="yes"
+  [ "$auto_apply" == "false" ] \
+    && read -p "Run terraform apply? Type 'yes' and hit enter, or anything else to cancel: " apply_prompt
+  [ "$apply_prompt" == "yes" ] \
+    || { echo "Terraform apply cancelled" && exit 1 ; }
 
   echo "----- terraform apply -------"
   terraform apply ${plan_file} \
@@ -324,33 +398,25 @@ terraform_apply() {
 }
 
 terraform_state_list() {
-  terraform_init $@
-
   [[ "${verbose}" == "true" ]] \
     && spacer \
     && echo "Running terraform state list ..."
-
+  #terraform_init $@
   prereqs_terraform $@
+  custom_arguments $@
 
   echo "----- terraform state list -------"
   terraform state list 
-#    -input=false \
-#    -var-file=${env_tfvars_file} \
-#    -var "management_method=${management_method}" \
-#    -var "git_repo_name=${git_repo_name}" \
-#    -var "git_repo_path=${git_repo_path}" \
-#    -var "profile=${profile}" \
-#    -out ${plan_file}
 }
 
 terraform_destroy() {
-  terraform_init $@
-
   [[ "${verbose}" == "true" ]] \
     && spacer \
     && echo "Running terraform destroy ..."
 
+  terraform_init $@
   prereqs_terraform $@
+  custom_arguments $@
 
   echo "----- terraform destroy -------"
   terraform destroy \
@@ -361,6 +427,12 @@ terraform_destroy() {
     -var "profile=${profile}" \
       && tf_resource_status="Destroyed" \
       && tag_remote_state_file $@
+}
+
+terraform_ipa() {
+  terraform_init $@
+  terraform_plan $@
+  terraform_apply $@
 }
 
 tag_remote_state_file() {
@@ -424,7 +496,6 @@ variable "product" {}
 variable "profile" {}
 variable "environment" {}
 variable "region" {}
-variable "name" {}
 variable "management_method" {}
 variable "git_repo_name" {}
 variable "git_repo_path" {}
@@ -436,7 +507,6 @@ locals {
     Application      = var.application
     Owner            = var.owner
     Product          = var.product
-    Name             = var.name
     ManagementMethod = var.management_method
     GitRepoName      = var.git_repo_name
     GitRepoPath      = var.git_repo_path
@@ -460,7 +530,6 @@ write_all_resources_common_variables() {
 owner       = "EXAMPLE_email"
 product     = "EXAMPLE_product"
 application = "EXAMPLE_application"
-name        = "EXAMPLE_name"
 
 EOF
 
@@ -475,7 +544,7 @@ write_dev_us_east_1_tfvars() {
   if required
 */
 
-environment = "dev"
+environment = "DEV"
 region      = "us-east-1"
 
 EOF
@@ -704,18 +773,21 @@ prereqs_module() {
 usage_short() {
   cat <<- EOF
   Usage (choose one):
-    $(basename $0) -irm | --initialize-root-module
-    $(basename $0) -lam | --list-available-modules [module_branch]
-    $(basename $0) -am  | --add-module module_name [module_branch]
-    $(basename $0) -p   | --plan        tfvars_file
-    $(basename $0) -a   | --apply       tfvars_file
-    $(basename $0) -d   | --destroy     tfvars_file
-    $(basename $0) -sl  | --state-list  tfvars_file
-    $(basename $0) -s   | --status      tfvars_file
-    $(basename $0) -gwi | --github-workflow-init tfvars_file [module_branch]
-    $(basename $0) -h   | --help
-    $(basename $0) -v   | --version
-    $(basename $0) --verbose <--append to any other option
+    $(basename $0) -irm | -initialize-root-module
+    $(basename $0) -lam | -list-available-modules  [module_branch]
+    $(basename $0) -am  | -add-module     module_name  [module_branch]
+    $(basename $0)        -init            tfvars_file [-- terraform options]
+    $(basename $0)        -plan            tfvars_file [-- terraform options]
+    $(basename $0)        -apply           tfvars_file [-- terraform options]
+    $(basename $0)        -destroy         tfvars_file [-- terraform options]
+    $(basename $0)        -import          tfvars_file ADDRESS ID
+    $(basename $0) -ipa | -init-plan-apply tfvars_file
+    $(basename $0) -sl  | -state-list      tfvars_file
+    $(basename $0) -s   | -status          tfvars_file
+    $(basename $0) -gwi | -github-workflow-init tfvars_file [module_branch]
+    $(basename $0) -h   | -help
+    $(basename $0) -v   | -version
+    $(basename $0)        -verbose <--append to any other option
 EOF
 }
 
@@ -728,18 +800,21 @@ NAME
      tfstack.sh -- manages terraform "stacks"
 
 SYNOPSIS
-      tfstack.sh -irm | --initialize-root-module
-      tfstack.sh -lam | --list-available-modules [module_branch]
-      tfstack.sh -am  | --add-module module_name [module_branch]
-      tfstack.sh -p   | --plan       tfvars_file
-      tfstack.sh -a   | --apply      tfvars_file
-      tfstack.sh -d   | --destroy    tfvars_file
-      tfstack.sh -sl  | --state-list tfvars_file
-      tfstack.sh -s   | --status     tfvars_file
-      tfstack.sh -gwi | --github-workflow-init tfvars_file [module_branch]
-      tfstack.sh -h   | --help
-      tfstack.sh -v   | --version
-      tfstack.sh --verbose <--append to any other option
+      tfstack.sh -irm | -initialize-root-module
+      tfstack.sh -lam | -list-available-modules [module_branch]
+      tfstack.sh -am  | -add-module      module_name [module_branch]
+      tfstack.sh        -init            tfvars_file [-- terraform options]
+      tfstack.sh        -plan            tfvars_file [-- terraform options]
+      tfstack.sh        -apply           tfvars_file [-- terraform options]
+      tfstack.sh        -destroy         tfvars_file [-- terraform options]
+      tfstack.sh        -import          tfvars_file ADDRESS ID
+      tfstack.sh -ipa | -init-plan-apply tfvars_file [-y]
+      tfstack.sh -sl  | -state-list      tfvars_file
+      tfstack.sh -s   | -status          tfvars_file
+      tfstack.sh -gwi | -github-workflow-init tfvars_file [module_branch]
+      tfstack.sh -h   | -help
+      tfstack.sh -v   | -version
+      tfstack.sh        -verbose <--append to any other option
 
 DESCRIPTION
      The tfstack.sh command manages terraform "stacks". It pulls
@@ -755,13 +830,6 @@ CREDENTIALS
      profile to use. Exporting the credentials as an environmental 
      variable won't work, because there is no way for a script to know
      which environment is configured for the exported credentials.
-     
-PREREQUISITES
-     - Terraform remote state bucket
-     - Store the name of the bucket in SSM Parameter Store named:
-       "/infrastructure/terraform/state-bucket"
-     - Dynamodb table named:
-       TerraformLockDB
 
 INITIALIZATION
      1. Run --initialize-root-module. This will place some required
@@ -795,84 +863,112 @@ INITIALIZATION
 USAGE
      The following options are available:
 
-     --initialize-root-module
+     -initialize-root-module
                 - Copies core files needed to manage a terraform module. These files and tfstack
                   will manage the terraform S3 backend, declare some standard variables and provide
                   a most basic <env>-<region>.tfvars file which will work in our DEV AWS account, in
                   the us-east-1 region. You will need to replace any EXAMPLE values in those files 
                   with 'real' values.
 
-     --list-available-modules
+     -list-available-modules
                 - Checks out our github repository 'cicd-template' into /tmp/. Lists modules there which
                   have core template files available to populate your root module. You will need to 
                   replace any EXAMPLE values in those files 
                   with 'real' values.
+     -init
+                - Runs terraform init.
+                  Include supported terraform init arguments using this syntax:
+                    -- option1 option2 
 
-     --plan
-                - Runs terraform init. This safeguards the remote state file.
-                  Runs terraform plan. This creates the plan.
+     -plan
+                - Runs terraform plan. This creates the plan.
                   Runs a number of verification steps.
+                  Include supported terraform plan arguments using this syntax:
+                    -- option1 option2 
 
-     --apply
-                - Runs terraform init. This safeguards the remote state file.
-                  Runs terraform apply.
+     -apply
+                - Runs terraform apply.
                   Runs a number of verification steps.
+                  Include supported terraform apply arguments using this syntax:
+                    -- option1 option2 
 
-     --destroy
+     -destroy
                 - Runs terraform init. This safeguards the remote state file.
                   Runs terraform destroy.
                   Runs a number of verification steps.
 
-     --state-list
+     -ipa | -init-plan-apply
+                - Runs terraform init, terraform plan and terraform apply.
+                  This option prompts you before applying so you have a
+                  chance to review the plan. This is the fastest option
+                  which uses default terraform options.
+                  Accepts a -y argument for auto-approval
+
+     -import
+                - Runs terraform init. This safeguards the remote state file.
+                  Runs terraform import.
+
+     -state-list
                 - Returns a list of resources via terraform state list
 
-     --status
+     -status
                 - Returns the status of the terraform 'stack'.
                   Applied: resources exist
                   Destroyed: resources have been destroyed
                   No state file: resources have not been created yet
 
-     --help | -h
+     -help | -h
                 - Displays this help screen
 
-     --version | -v
+     -version | -v
                 - Displays the version of tfstack
 
 
 VARIABLES
 
+  An explanation of the Tags can be found on the wiki at https://wiki.mms.org
 
   Environment:
        DEV
        QA
-       PROD
+       PRODUCTION
+       SIS
+       UTIL
+       UCCDEV
+       UCCQA
+       UCCPRODUCTION
        ETC ...
 
   Name:
        For Tagging. May be used to create other Tags.
 
   Application:
-       Name of the application for your code
+       Per the wiki. Examples include:
+       JWatch
+       NEJM
+       NEJM:KPLUS
 
   Owner:
-       Your email
+       Email contact for department or product/project.
 
   Product:
-       Whatever product your resources support
+       Per the wiki. Examples include:
+       KPlus
 
 EXAMPLES
      Commands:
-       tfstack.sh --initialize-root-module
-       tfstack.sh --add-module s3_bucket
+       tfstack.sh -initialize-root-module
+       tfstack.sh -add-module s3_bucket
 
        [ modify EXAMPLE values in the files ]
 
-       tfstack.sh --plan dev-us-east-1.tfvars
-       tfstack.sh --apply dev-us-east-1.tfvars
+       tfstack.sh -init dev-us-east-1.tfvars
+       tfstack.sh -plan dev-us-east-1.tfvars
+       tfstack.sh -apply dev-us-east-1.tfvars
 
 
 Questions?  Please contact:
-Put your email address here.
+gtsinclair@mms.org
 
 EOF
 }
@@ -916,38 +1012,50 @@ main() {
   spacer
 
   case "$1" in
-    -p|--plan)
+    -init)
+      terraform_init $@
+      ;;
+    -plan)
       terraform_plan $@
       ;;
-    -a|--apply)
+    -apply)
       terraform_apply $@
       ;;
-    -d|--destroy)
+    -destroy)
       terraform_destroy $@
       ;;
-    -irm|--initialize-root-module)
+    -ipa | -init-plan-apply)
+      terraform_ipa $@
+      ;;
+    -irm| -initialize-root-module)
       initialize_root_module $@
       ;;
-    -lam|--list-available-modules)
+    -lam| -list-available-modules)
       list_available_modules $@
       ;;
-    -am|--add-module)
+    -am| -add-module)
       add_module $@
       ;;
-    -gwi|--github-workflow-init)
+    -gwi| -github-workflow-init)
       github_workflow_file $@
       ;;
-    -sl|--state-list)
+    -import)
+      terraform_import $@
+      ;;
+    -state-list)
       terraform_state_list $@
       ;;
-    -s|--status)
+    -status)
       get_terraform_resource_status $@
       ;;
-    -h|--help)
+    -custom)
+      terraform_custom $@
+      ;;
+    -h| -help)
       display_readme
       exit 0
       ;;
-    -v|--version)
+    -version)
       echo "$(basename $0) version ${tfstack_version}"
       exit 0
       ;;
@@ -958,6 +1066,7 @@ main() {
 }
 
 main $@
+
 
 exit 0
 
