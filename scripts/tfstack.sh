@@ -929,27 +929,17 @@ USAGE
 
 VARIABLES
 
-  An explanation of the Tags can be found on the wiki at https://wiki.mms.org
-
   Environment:
        DEV
        QA
        PRODUCTION
-       SIS
-       UTIL
-       UCCDEV
-       UCCQA
-       UCCPRODUCTION
        ETC ...
 
   Name:
        For Tagging. May be used to create other Tags.
 
   Application:
-       Per the wiki. Examples include:
-       JWatch
-       NEJM
-       NEJM:KPLUS
+       Name for application
 
   Owner:
        Email contact for department or product/project.
@@ -970,8 +960,8 @@ EXAMPLES
        tfstack.sh -apply dev-us-east-1.tfvars
 
 
-Questions?  Please contact:
-gtsinclair@mms.org
+Questions?  Please contact goody
+
 
 EOF
 }
