@@ -1,6 +1,6 @@
 #!/bin/sh
 
-tfstack_version='v0.45'
+tfstack_version='v0.45.2'
 management_method=tfstack-${tfstack_version}
 
 ##todo:
@@ -35,7 +35,7 @@ custom_arguments() {
     arg_string="$arg_string$i"
   done
 
-  custom_args=$(echo $arg_string |awk -F '--' '{print $2}')
+  custom_args=$(echo $arg_string |awk -F 'tfvars' '{print $2}')
 }
  
  
@@ -316,6 +316,10 @@ terraform_plan() {
   terraform_validate
   prereqs_terraform $@
 
+  ##setting up to mask these lines so folks don't try to run terraform directly:
+  line1='To perform exactly these actions, run the following command to apply:'
+  line2='terraform apply "tfplan-dev-us-east-1.out"'
+
   echo "----- terraform plan -------"
   terraform plan \
     -input=false \
@@ -325,7 +329,9 @@ terraform_plan() {
     -var "git_repo_path=${git_repo_path}" \
     -var "profile=${profile}" \
     $custom_args \
-    -out ${plan_file} 
+    -out ${plan_file} \
+    | sed "s/$line1//g" \
+    | sed "s/$line2//g"
 }
 
 terraform_import() {
@@ -776,10 +782,10 @@ usage_short() {
     $(basename $0) -irm | -initialize-root-module
     $(basename $0) -lam | -list-available-modules  [module_branch]
     $(basename $0) -am  | -add-module     module_name  [module_branch]
-    $(basename $0)        -init            tfvars_file [-- terraform options]
-    $(basename $0)        -plan            tfvars_file [-- terraform options]
-    $(basename $0)        -apply           tfvars_file [-- terraform options]
-    $(basename $0)        -destroy         tfvars_file [-- terraform options]
+    $(basename $0)        -init            tfvars_file [terraform options]
+    $(basename $0)        -plan            tfvars_file [terraform options]
+    $(basename $0)        -apply           tfvars_file [terraform options]
+    $(basename $0)        -destroy         tfvars_file [terraform options]
     $(basename $0)        -import          tfvars_file ADDRESS ID
     $(basename $0) -ipa | -init-plan-apply tfvars_file
     $(basename $0) -sl  | -state-list      tfvars_file
@@ -803,10 +809,10 @@ SYNOPSIS
       tfstack.sh -irm | -initialize-root-module
       tfstack.sh -lam | -list-available-modules [module_branch]
       tfstack.sh -am  | -add-module      module_name [module_branch]
-      tfstack.sh        -init            tfvars_file [-- terraform options]
-      tfstack.sh        -plan            tfvars_file [-- terraform options]
-      tfstack.sh        -apply           tfvars_file [-- terraform options]
-      tfstack.sh        -destroy         tfvars_file [-- terraform options]
+      tfstack.sh        -init            tfvars_file [terraform options]
+      tfstack.sh        -plan            tfvars_file [terraform options]
+      tfstack.sh        -apply           tfvars_file [terraform options]
+      tfstack.sh        -destroy         tfvars_file [terraform options]
       tfstack.sh        -import          tfvars_file ADDRESS ID
       tfstack.sh -ipa | -init-plan-apply tfvars_file [-y]
       tfstack.sh -sl  | -state-list      tfvars_file
@@ -877,20 +883,17 @@ USAGE
                   with 'real' values.
      -init
                 - Runs terraform init.
-                  Include supported terraform init arguments using this syntax:
-                    -- option1 option2 
+                  Append supported terraform init arguments at the end.
 
      -plan
                 - Runs terraform plan. This creates the plan.
                   Runs a number of verification steps.
-                  Include supported terraform plan arguments using this syntax:
-                    -- option1 option2 
+                  Append supported terraform plan arguments at the end.
 
      -apply
                 - Runs terraform apply.
                   Runs a number of verification steps.
-                  Include supported terraform apply arguments using this syntax:
-                    -- option1 option2 
+                  Append supported terraform apply arguments at the end.
 
      -destroy
                 - Runs terraform init. This safeguards the remote state file.
