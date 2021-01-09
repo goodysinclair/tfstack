@@ -1,0 +1,44 @@
+
+spacer() {
+verbose_check() {
+custom_arguments() {
+verify_aws_profile_exists() {
+verify_no_examples() {
+set_module_variables() {
+set_git_variables() {
+verify_initialization(){
+verify_env_tfvars_file(){
+set_env_tfvars_file_variables() {
+set_common_tfvars_file_variables() {
+verify_common_tfvars_file_values(){
+set_aws_variables() {
+display_variables() {
+terraform_validate() {
+github_workflow_file() {
+check_uncommitted() {
+postapply_message() {
+terraform_init() {
+terraform_plan() {
+terraform_import() {
+terraform_apply() {
+terraform_state_list() {
+terraform_destroy() {
+terraform_ipa() {
+tag_remote_state_file() {
+write_terraform_backend_partial() {
+write_terraform_providers() {
+write_terraform_standard_variables() {
+write_all_resources_common_variables() {
+verify_gitignore() {
+initialize_root_module() {
+clone_templates_repository() {
+set_templates_repository_branch() {
+set_templates_repository_version_tag() {
+list_available_modules() {
+add_module() {
+prereqs_terraform() {
+prereqs_module() {
+usage_short() {
+display_readme() {
+get_terraform_resource_status() {
+main() {
