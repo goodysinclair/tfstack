@@ -2,8 +2,8 @@
 
 
 import boto3
-import os
-import subprocess
+#import os
+#import subprocess
 import argparse
 
 ## configure python
@@ -21,6 +21,7 @@ destroy_bool = 'false'
 import_bool  = 'false'
 irm_bool     = 'false'
 ipa_bool     = 'false'
+aa_bool      = 'false'
 lam_bool     = 'false'
 am_bool      = 'false'
 gwi_bool     = 'false'
@@ -108,73 +109,79 @@ def arg_parse():
     parser = argparse.ArgumentParser()
     parser.add_argument("-init", 
                         "--terraform-init",
+                        metavar='tfvars_file',
                         type=argparse.FileType('r'),
-                        help="terraform init") 
+                        help="runs terraform init") 
     parser.add_argument("-plan",
                         "--terraform-plan",
+                        metavar='tfvars_file',
                         type=argparse.FileType('r'),
-                        help="terraform plan") 
+                        help="runs terraform plan") 
     parser.add_argument("-apply",
                         "--terraform-apply",
+                        metavar='tfvars_file',
                         type=argparse.FileType('r'),
-                        help="terraform apply") 
+                        help="runs terraform apply") 
+    parser.add_argument("-ipa", "--init-plan-apply",
+                        metavar='tfvars_file',
+                        type=argparse.FileType('r'),
+                        help="runs terraform init, plan and apply") 
     parser.add_argument("-destroy",
                         "--terraform-destroy",
+                        metavar='tfvars_file',
                         type=argparse.FileType('r'),
-                        help="terraform destroy") 
+                        help="runs terraform destroy") 
     parser.add_argument("-import",
                         "--terraform-import",
+                        metavar='tfvars_file',
                         help="terraform import") 
     parser.add_argument("-irm",
                         "--initialize-root-module",
+                        action='store_true',
                         help="initialize root module") 
-    parser.add_argument("-ipa", "--init-plan-apply",
-                        type=argparse.FileType('r'),
-                        help="terraform init, plan and apply") 
+    parser.add_argument("-aa", "--auto-approve",
+                        action='store_true',
+                        help="use with -ipa or --apply") 
     parser.add_argument("-lam", "--list-available-modules",
+                        action='store_true',
                         help="list available modules") 
     parser.add_argument("-am", "--add-module",
-                        help="add module") 
+                        metavar='module_name',
+                        help="add a module") 
     parser.add_argument("-gwi", "--github-workflow-file",
+                        metavar='tfvars_file',
                         help="create github workflow file") 
     parser.add_argument("-state",
                         "--terraform-state-list",
+                        metavar='tfvars_file',
                         help="terraform state list") 
     parser.add_argument("--status",
+                        metavar='tfvars_file',
                         help="status based on state file") 
     parser.add_argument("--custom",
+                        metavar='custom_action',
                         help="run custom terraform commands") 
+    parser.add_argument("--verbose",
+                        action='store_true',
+                        help="enable more messages") 
     parser.add_argument("-v", "--version",
+                        action='store_true',
                         help="version") 
     args = parser.parse_args()
-    if args.terraform_init          == 'enable':
-        init_bool                    = 'true'
-    if args.terraform_plan          == 'enable':
-        plan_bool                    = 'true'
-    if args.terraform_apply         == 'enable':
-        apply_bool                   = 'true'
-    if args.terraform_destroy       == 'enable':
-        destroy_bool                 = 'true'
-    if args.terraform_import        == 'enable':
-        import_bool                  = 'true'
-    if args.initialize_root_module  == 'enable':
-        initialize_root_module_bool  = 'true'
-    if args.init_plan_apply         == 'enable':
-        ipa_bool                     = 'true'
-    if args.list_available_modules  == 'enable':
-        lam_bool                     = 'true'
-    if args.add_module              == 'enable':
-        am_bool                      = 'true'
-    if args.github_workflow_file    == 'enable':
-        gwi_bool                     = 'true'
-    if args.terraform_state_list    == 'enable':
-        state_bool                   = 'true'
-    if args.status                  == 'enable':
-        status_bool                  = 'true'
-    if args.custom                  == 'enable':
-        custom_bool                  = 'true'
-    if args.version                 == 'enable':
-        version_bool                 = 'true'
+    return args.terraform_init,
+    args.terraform_plan,
+    args.terraform_apply,
+    args.terraform_destroy,
+    args.terraform_import,
+    args.initialize_root_module,
+    args.init_plan_apply,
+    args.list_available_modules,
+    args.add_module,
+    args.github_workflow_file,
+    args.terraform_state_list,
+    args.status,
+    args.custom,
+    args.version
     print("Arguments! ", args)
 
 
