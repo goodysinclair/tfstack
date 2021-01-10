@@ -11,6 +11,25 @@ session         = boto3.Session(region_name='us-east-1')
 ec2_client      = session.client('ec2')
 
 #---------------------------------------------------------
+#                  GLOBAL_VARIABLES
+#---------------------------------------------------------
+
+init_bool    = 'false'
+plan_bool    = 'false'
+apply_bool   = 'false'
+destroy_bool = 'false'
+import_bool  = 'false'
+irm_bool     = 'false'
+ipa_bool     = 'false'
+lam_bool     = 'false'
+am_bool      = 'false'
+gwi_bool     = 'false'
+state_bool   = 'false'
+status_bool  = 'false'
+custom_bool  = 'false'
+version_bool = 'false'
+
+#---------------------------------------------------------
 #                  TEXT_BLOCKS
 #---------------------------------------------------------
 
@@ -86,20 +105,6 @@ tfplan*
 #---------------------------------------------------------
 
 def arg_parse():
-    init_bool    = 'false'
-    plan_bool    = 'false'
-    apply_bool   = 'false'
-    destroy_bool = 'false'
-    import_bool  = 'false'
-    irm_bool     = 'false'
-    ipa_bool     = 'false'
-    lam_bool     = 'false'
-    am_bool      = 'false'
-    gwi_bool     = 'false'
-    state_bool   = 'false'
-    status_bool  = 'false'
-    custom_bool  = 'false'
-    version_bool = 'false'
     parser = argparse.ArgumentParser()
     parser.add_argument("-init", 
                         "--terraform-init",
@@ -118,7 +123,7 @@ def arg_parse():
                         type=argparse.FileType('r'),
                         help="terraform destroy") 
     parser.add_argument("-import",
-                        "--terrraform-import",
+                        "--terraform-import",
                         help="terraform import") 
     parser.add_argument("-irm",
                         "--initialize-root-module",
@@ -130,9 +135,10 @@ def arg_parse():
                         help="list available modules") 
     parser.add_argument("-am", "--add-module",
                         help="add module") 
-    parser.add_argument("-gwi", "--github-workflow-init",
+    parser.add_argument("-gwi", "--github-workflow-file",
                         help="create github workflow file") 
-    parser.add_argument("--state-list",
+    parser.add_argument("-state",
+                        "--terraform-state-list",
                         help="terraform state list") 
     parser.add_argument("--status",
                         help="status based on state file") 
@@ -169,6 +175,8 @@ def arg_parse():
         custom_bool                  = 'true'
     if args.version                 == 'enable':
         version_bool                 = 'true'
+    print("Arguments! ", args)
+
 
 
 
@@ -242,8 +250,11 @@ def write_root_module_files():
 
 
 def main():
-    arg_parse    
-    write_root_module_files()
+    arg_parse()
+
+    if irm_bool == "enable":
+        write_root_module_files()
+
 
 if __name__ == "__main__":
     main()
