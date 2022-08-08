@@ -1,0 +1,1176 @@
+#!/usr/bin/env bash
+
+tfstack_version='v0.6.12'
+management_method=tfstack
+
+##todo:
+ # have tfstack check to see if it's the latest version
+ # add list of approved 'product' tags someplace
+ # ignore string EXAMPLE if commented
+ # deal with a repo with zero commits
+ # deal better with unquoted environment and region in the tfvars
+
+spacer() {
+  echo "======================================================================="
+}
+
+custom_arguments() {
+  custom_args=""
+
+  shift #<-- shift past the first action
+  shift #<-- shift past the .tfvars file
+  while [[ $1 != "--verbose" ]] \
+    && [[ $1 != "-tv" ]] \
+    && [[ $1 != "--terraform-version-tag" ]] \
+    && [[ $1 != "-tb" ]] \
+    && [[ $1 != "--terraform-binary" ]] \
+    && [[ $1 != "" ]]; do
+    custom_args+="$1 "
+    shift
+  done
+
+  [[ "${verbose}" == "true" ]] \
+    && echo "Custom terraform arguments:" \
+    && echo $custom_args
+}
+
+determine_terraform_binary() {
+  terraform_binary=$(which terraform)
+
+  ## check for terraform-binary:
+  echo $@ | egrep -q "\-tb|\-\-terraform-binary" \
+    && while [[ $1 != "-tb" ]] \
+    && [[ $1 != "--terraform-binary" ]]; do
+      shift
+  done \
+    && shift \
+    && terraform_binary=$1
+
+  ## check for terraform-version-tag:
+  echo $@ | egrep -q "\-tv|\-\-terraform-version-tag" \
+    && while [[ $1 != "-tv" ]] \
+    && [[ $1 != "--terraform-version-tag" ]]; do
+      shift
+  done \
+    && shift \
+    && terraform_binary=$(which terraform)-$1
+
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Terraform binary: $terraform_binary"
+}
+
+verify_aws_profile_exists() {
+  profile_valid="false"
+  [[ -f ~/.aws/credentials ]] \
+    && grep -q $profile ~/.aws/credentials \
+    && profile_valid="true"
+  [[ -f ~/.aws/config ]] \
+    && grep -q $profile ~/.aws/config \
+    && profile_valid="true"
+  [[ $profile_valid == "true" ]] \
+    || { echo "Profile $profile not found in ~/.aws/config or ~/.aws/credentials." \
+    && exit 1 ; }
+}
+
+verify_no_examples() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Verifying all EXAMPLE values have been replaced ..."
+
+  local ex_files
+  local count=0
+  for i in $(ls | grep -v README) ; do \
+    grep --directories=skip -q EXAMPLE $i \
+      && ((count=count+1)) \
+      && ex_files="${ex_files} $i   <-- Please modify this file. Replace EXAMPLE values with real values.
+      " ; \
+  done
+
+  [[ "count" -ge "1" ]] \
+    && echo "EXAMPLE values were found:" \
+    && echo "" \
+    && echo "${ex_files}" | column -t \
+    && { exit 1 ; }
+}
+
+set_module_variables() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Setting the module variables ..."
+
+  modules_repo_url="git@SOMEREPO"
+  modules_repo_name="cicd-templates"
+  clone_directory="/tmp/github_terraform_templates"
+  clone_path="${clone_directory}/${modules_repo_name}"
+  modules_path="${clone_path}/terraform/modules"
+  modules_template_path="${clone_path}/terraform/tfstack_root_module_templates"
+  github_workflows_path="${clone_path}/ci-cd-templates/github_workflow_templates"
+  github_workflow_file="github_workflow_template.yaml"
+}
+
+set_git_variables() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Setting git variables ..."
+
+  ##verify we are in a git repo first
+  git status \
+    || { echo "Not in a git repository" && exit 1 ; }
+    
+  #[[ $(git status | grep branch ) ]] \
+  #  || { echo "Not in a git repository" && exit 1 ; }
+
+  git_repo_path=$(git rev-parse --show-prefix | sed 's/\/$//g')
+  git_commit=$(git log -1 | grep -m 1 commit | cut -d\  -f 2)
+  git_repo_branch=$(git status | head -n 1 | awk 'NF>1{print $NF}')
+  git_repo_name=$(basename `git rev-parse --show-toplevel`)
+  git_repo_root_folder=$(git rev-parse --show-toplevel)
+}
+
+verify_initialization(){
+  [[ -f terraform_standard_variables.tf ]] \
+    || { echo "Root module directory not initialized yet." \
+    && exit 1 ; }
+}
+
+verify_env_tfvars_file(){
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Verifying the env-region-tfvars file ..."
+
+  local env
+  local reg
+
+  [[ -f ${env_tfvars_file} ]] \
+    || { echo "tfvars file '${env_tfvars_file}' does not exist" && exit 1 ; }
+
+  echo ${env_tfvars_file} \
+    | grep -q \.tfvars \
+    || { echo "tfvars file does not end in .tfvars" && exit 1 ; }
+
+  env=$(grep \^environment ${env_tfvars_file} \
+        | cut -d\" -f 2)
+  [[ -z ${env} ]] \
+    && { echo "Environment variable not found in the given .tfvars file." \
+    && exit 1 ; }
+  
+  echo ${env_tfvars_file} \
+    | grep -i -q ${env} \
+    || { echo "tfvars file environment name does not match contents of file" \
+      && exit 1 ; }
+
+  reg=$(grep \^region ${env_tfvars_file} \
+        | cut -d\" -f 2)
+  [[ -z ${reg} ]] \
+    && { echo "Region variable not found in the given .tfvars file." \
+    && exit 1 ; }
+
+  echo ${env_tfvars_file} \
+    | grep -i -q ${reg} \
+    || { echo "tfvars file region name does not match contents of file" \
+      && exit 1 ; }
+}
+
+set_env_tfvars_file_variables() {
+  environment=$(grep \^environment ${env_tfvars_file} | cut -d\" -f 2)
+  environment_lc=$(echo ${environment} |  tr '[:upper:]' '[:lower:]')
+  environment_uc=$(echo ${environment} |  tr '[:lower:]' '[:upper:]')
+  profile=${environment_lc}
+  region=$(grep \^region ${env_tfvars_file} | cut -d\" -f 2)
+}
+
+set_owner_product_planfile() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Setting owner_product_planfile variables ..."
+
+  ##check for really old version:
+  [[ -f all_resources_common_variables.tfvars ]] \
+    && { echo "Please rename all _common_variables.tfvars files to end in .auto.tfvars" \
+    && exit 1 ; }
+
+  ##for backwards-compatibility:
+  [[ -f all_resources_common_variables.auto.tfvars ]] \
+    && set_common_tfvars_file_variables \
+    && return 
+
+  owner=$(grep -A 1 'variable "owner"' terraform_standard_variables.tf | tail -n 1 | cut -d\" -f 2)
+  product=$(grep -A 1 'variable "product"' terraform_standard_variables.tf | tail -n 1 | cut -d\" -f 2)
+  plan_file=tfplan-${environment_lc}-${region}.out
+}
+
+##for backwards-compatability
+set_common_tfvars_file_variables() {
+  echo "Found old common vars file" #<--debug
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Setting common_tfvars_file variables ..."
+
+  common_var_file=all_resources_common_variables.auto.tfvars
+
+  owner=$(grep \^owner ${common_var_file} | cut -d\" -f 2)
+  product=$(grep \^product ${common_var_file} | cut -d\" -f 2)
+  plan_file=tfplan-${environment_lc}-${region}.out
+}
+
+verify_common_tfvars_file_values(){
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Verifying the values in the tfvars files ..."
+
+  [[ -n ${product} ]]     || { echo "Value of \"product\" is null, please fix." && exit 1 ; }
+  [[ -n ${environment} ]] || { echo "Value of \"environment\" is null, please fix." && exit 1 ; }
+  [[ -n ${owner} ]]       || { echo "Value of \"owner\" is null, please fix." && exit 1 ; }
+}
+
+set_aws_variables() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Setting aws variables ..."
+
+  backend_key="${git_repo_name}/${git_repo_path}/terraform.tfstate"
+  state_bucket=$(aws ssm get-parameter \
+    --name "/infrastructure/terraform/state-bucket" \
+    --profile ${profile} \
+    --region ${region} \
+    | grep Value \
+    | cut -d\" -f 4) \
+    || { echo "No state bucket found" && exit 1 ;}
+}
+
+display_variables() {
+  spacer
+
+  echo "Displaying variables ..."
+  echo "plan_file: ${plan_file}"
+  echo "git_repo_path: ${git_repo_path}"
+  echo "git_commit: ${git_commit}"
+  echo "git_repo_name: ${git_repo_name}"
+  echo "git_repo_branch: ${git_repo_branch}"
+  echo "profile: ${profile}"
+  echo "environment: ${environment}"
+  echo "region: ${region}"
+  echo "owner: ${owner}"
+  echo "product: ${product}"
+  echo "management_method: ${management_method}"
+  echo "state_bucket: ${state_bucket}"
+  echo "backend_key: ${backend_key}"
+  echo "env_tfvars_file: ${env_tfvars_file}"
+  echo "action: $1"
+}
+
+terraform_validate() {
+  $terraform_binary validate \
+    || exit 1
+}
+
+github_workflow_file() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Adding github workflow file ..."
+
+  env_tfvars_file=$2    #<-- should always be the second argument
+  cwd=$(basename `pwd`)
+
+  ##make the workflows directory if it doesn't exist:
+    [[ -d ${git_repo_root_folder}/.github/workflows/ ]] \
+      || mkdir -p ${git_repo_root_folder}/.github/workflows
+
+  ##'copy' the workflow file with some substitutions:
+    cat ${github_workflows_path}/${github_workflow_file} \
+      | sed "s/TERRAFORM_ROOT_MODULE_DIRECTORY/${cwd}/g" \
+      | sed "s/AWS_ENVIRONMENT/${environment_lc}/g" \
+      | sed "s/AWS_REGION/${region}/g" \
+      > ${git_repo_root_folder}/.github/workflows/${environment_lc}-${region}-${cwd}.yaml
+}
+
+check_uncommitted() {
+
+  ##local variables:
+    local unchecked_files=0
+    local prod_env_check=0
+
+  ##check for uncommitted files in the current directory:
+    git status | grep -F ./ | grep -F -v ../ | grep -v tfplan \
+      && unchecked_files=1
+
+  ##check for environment containing the string 'prod':
+    echo $environment | grep -i prod \
+      && prod_env_check=1
+
+  ##if trying to apply to a prod account with unchecked files, bail
+   #nothing goes to prod which isn't checked into github 
+
+    echo "unchecked_files: ${unchecked_files}"
+    echo "prod_env_check: ${prod_env_check}"
+
+    [[ ${unchecked_files} -eq "1" ]] \
+      && [[ ${prod_env_check} -eq "1" ]] \
+      && { echo "You have unchecked files. Check them into github before deploying to a production-class account." \
+           && exit 1 ; }
+}
+
+postapply_message() {
+  spacer 
+  echo "Please commit and push your changes."
+  echo ""
+  echo "git add . ; git commit -m \"Apply of ${env_tfvars_file} is complete.\" ; git push"
+  spacer
+}
+
+terraform_init() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running terraform init ..."
+
+  echo "----- terraform init -------"
+  $terraform_binary init \
+    -input=false \
+    -backend-config="bucket=${state_bucket}" \
+    -backend-config="region=${region}" \
+    -backend-config="profile=${profile}" \
+    -backend-config="key=${backend_key}" \
+    -reconfigure \
+    $custom_args ; exit_code=$?
+
+    ##take action depending on exit code:
+    case "$exit_code" in
+      "0")
+        [[ "${verbose}" == "true" ]] \
+          && echo "init exited with code: $exit_code" \
+          && echo "This code means no errors happened"
+        ;;
+      "1")
+        echo "init exited with code: $exit_code"
+        echo "This code means an error happened"
+        exit 1
+        ;;
+    esac
+}
+
+terraform_plan() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running terraform plan ..."
+
+  ##setting up to mask these lines so folks don't try to run terraform directly:
+  line1='To perform exactly these actions, run the following command to apply:'
+  line2='terraform apply'
+
+  echo "----- terraform plan -------"
+  $terraform_binary plan \
+    -input=false \
+    -var-file=${env_tfvars_file} \
+    -var "management_method=${management_method}" \
+    -var "git_repo_name=${git_repo_name}" \
+    -var "git_repo_path=${git_repo_path}" \
+    -var "profile=${profile}" \
+    -detailed-exitcode \
+    $custom_args \
+    -out ${plan_file} ; exit_code=$?
+
+    ##take action depending on exit code:
+    case "$exit_code" in
+      "0")
+        [[ "${verbose}" == "true" ]] \
+          && echo "plan exited with code: $exit_code" \
+          && echo "This code means: 'Succeeded with empty diff (no changes)'" #<- per Hashicorp
+          exit 0
+        ;;
+      "1")
+        echo "plan exited with code: $exit_code"
+        echo "This code means: 'Error'" #<- per Hashicorp
+        exit 1
+        ;;
+      "2")
+        [[ "${verbose}" == "true" ]] \
+          && echo "plan exited with code: $exit_code" \
+          && echo "This code means: 'Succeeded with non-empty diff (changes present)'" #<- per Hashicorp
+        ;;
+    esac
+}
+
+terraform_import() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running terraform import ..."
+
+  import_address=$3
+  import_id=$4
+  echo "Address: $import_address"
+  echo "Id:      $import_id"
+
+  echo "----- terraform import -------"
+  $terraform_binary import \
+    -var-file=${env_tfvars_file} \
+    -var "management_method=${management_method}" \
+    -var "git_repo_name=${git_repo_name}" \
+    -var "git_repo_path=${git_repo_path}" \
+    -var "profile=${profile}" \
+    ${import_address} ${import_id} ; exit_code=$?
+
+    ##take action depending on exit code:
+    case "$exit_code" in
+      "0")
+        [[ "${verbose}" == "true" ]] \
+          && echo "import exited with code: $exit_code" \
+          && echo "This code means no error happened"
+        ;;
+      "1")
+        echo "import exited with code: $exit_code"
+        echo "This code means an error happened"
+        exit 1
+        ;;
+    esac
+}
+
+terraform_apply() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running terraform apply ..."
+
+  ##allow an 'auto_apply' option
+  auto_apply="false"
+  while (( $# )); do
+    case "$1" in
+      -y | --yes)
+        auto_apply="true"
+        echo "auto apply on"
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  ##check if -apply-auto was set from cli:
+  [ "$auto_apply_prompt" == "true" ] \
+    && auto_apply="true"
+
+  ##verify auto-apply:
+  [ "$auto_apply" == "true" ] \
+    && apply_prompt="yes"
+  [ "$auto_apply" == "false" ] \
+    && read -p "Run terraform apply? Type 'yes' and hit enter, or anything else to cancel: " apply_prompt
+  [ "$apply_prompt" == "yes" ] \
+    || { echo "Terraform apply cancelled" && exit 1 ; }
+
+  echo "----- terraform apply -------"
+  $terraform_binary apply ${plan_file} \
+    ; exit_code=$?
+
+  ##take action depending on exit code:
+    case "$exit_code" in
+      0|2) #<-- both mean 'success' ... 0 is no changes, 2 is changes required
+        tf_resource_status="Applied"
+        tag_remote_statefile $@
+        postapply_message $@
+        [[ "${verbose}" == "true" ]] \
+          && echo "apply exited with code: $exit_code" \
+          && echo "This code means no error happened"
+        ;;
+      *)
+        spacer
+        echo "apply exited with code: $exit_code"
+        echo "Hashicorp does not tell us what this means, but it is some sort of error"
+        exit 1  #<-- force an error even if the exit code isn't 1
+        ;;
+    esac
+}
+
+terraform_state_list() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running terraform state list ..."
+
+  echo "----- terraform state list -------"
+  $terraform_binary state list 
+}
+
+terraform_destroy() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running terraform destroy ..."
+
+  echo "----- terraform destroy -------"
+  $terraform_binary destroy \
+    -var-file=${env_tfvars_file} \
+    -var "management_method=${management_method}" \
+    -var "git_repo_name=${git_repo_name}" \
+    -var "git_repo_path=${git_repo_path}" \
+    -var "profile=${profile}" \
+      && tf_resource_status="Destroyed" \
+      && tag_remote_statefile $@ ; exit_code=$?
+
+  ##take action depending on exit code:
+    case "$exit_code" in
+      "0")
+        [[ "${verbose}" == "true" ]] \
+          && echo "destroy exited with code: $exit_code" \
+          && echo "This code means no error happened"
+        ;;
+      "1")
+        echo "destroy exited with code: $exit_code"
+        echo "This code means an error happened"
+        exit 1
+        ;;
+    esac
+}
+
+tag_remote_statefile() {
+  spacer
+  echo "Tagging the remote state file ..."
+
+  aws s3api put-object-tagging \
+    --bucket ${state_bucket} \
+    --key ${backend_key} \
+    --tagging '{"TagSet": [{ "Key": "TerraformResourceStatus", "Value": "'"$tf_resource_status"'" }, { "Key": "Environment", "Value": "'"$environment"'" }, { "Key": "GitCommit", "Value": "'"$git_commit"'" }, { "Key": "GitRepoBranch", "Value": "'"$git_repo_branch"'" }, { "Key": "GitRepoName/Path", "Value": "'"$git_repo_name/$git_repo_path"'" }, { "Key": "Product", "Value": "'"$product"'" }, { "Key": "Owner", "Value": "'"$owner"'" }, { "Key": "ManagementMethod", "Value": "'"$management_method-$tfstack_version"'" }, { "Key": "Name", "Value": "'"terraform.tfstate"'" }, { "Key": "StateFileLocation", "Value": "'"${state_bucket}/${backend_key}"'" } ]}' \
+    --profile ${profile} \
+    --region ${region} >/dev/null
+}
+
+write_dev_east_tfvars() {
+  cat << EOF > dev-us-east-1.tfvars
+environment = "dev"
+region      = "us-east-1"
+
+EOF
+  basename dev-us-east-1.tfvars
+}
+
+write_terraform_backend() {
+  cat << EOF > terraform_backend.tf
+terraform {
+  backend "s3" {
+    dynamodb_table = "TerraformLockDB"
+  }
+}
+terraform {
+  required_providers {
+    amazon = {
+      source  = "hashicorp/aws"
+    }
+  }
+}
+provider "amazon" {
+  region  = var.region
+  profile = var.profile
+  default_tags {
+    tags = local.common_tags
+  }
+}
+provider "amazon" {
+  alias   = "us-east-1"
+  region  = "us-east-1"
+  profile = var.profile
+  default_tags {
+    tags = local.common_tags
+  }
+}
+provider "amazon" {
+  alias   = "us-west-2"
+  region  = "us-west-2"
+  profile = var.profile
+  default_tags {
+    tags = local.common_tags
+  }
+}
+
+EOF
+
+  basename terraform_backend.tf
+}
+
+write_terraform_standard_variables() {
+  cat << 'EOF' > terraform_standard_variables.tf
+##############################
+# populate owner and product #
+##############################
+
+variable "owner" {
+  default     = "EXAMPLE_your_email_address"
+  description = "Use your email address"
+}
+variable "product" {
+  default     = "EXAMPLE_product"
+  description = "Choose a correct one from sre-standards github repo"
+}
+
+##########################
+# no more edits required #
+##########################
+
+variable "profile" {
+  description = "Set by tfstack"
+}
+variable "environment" {
+  description = "Set by tfstack"
+}
+variable "region" {
+  description = "Set by tfstack"
+}
+variable "management_method" {
+  description = "Set by tfstack"
+}
+variable "git_repo_name" {
+  description = "Set by tfstack"
+}
+variable "git_repo_path" {
+  description = "Set by tfstack"
+}
+
+locals {
+  common_tags = {
+    Name             = "${var.git_repo_name}-NAME-NOT-PROVIDED-BY-OWNER"
+    Region           = var.region
+    Environment      = var.environment
+    Owner            = var.owner
+    Product          = var.product
+    ManagementMethod = var.management_method
+    GitRepoName      = var.git_repo_name
+    GitRepoPath      = var.git_repo_path
+  }
+}
+
+EOF
+
+  basename terraform_standard_variables.tf
+}
+
+verify_gitignore() {
+  ##git ignore .terraform/:
+    grep -q terraform .gitignore 2>/dev/null \
+      || echo '**/.terraform' >> .gitignore 
+
+  ##git ignore the tfplan files:
+    grep -q tfplan .gitignore 2>/dev/null \
+      || echo 'tfplan*.out' >> .gitignore 
+
+  ##replace the old **/.terraform* with a string
+   #that won't ignore the .terraform.lock.hcl file
+   #and remove the .bkk file that sed -i insists upon
+  ##using two different approaches as Macos and Linux use different options for -i
+   uname -a | grep -q Darwin && \
+     sed -i .bkk 's/\*\*\/.terraform\*/\*\*\/.terraform/g' .gitignore \
+       && rm .gitignore.bkk 
+   uname -a | grep -q Linux && \
+     sed -i 's/\*\*\/.terraform\*/\*\*\/.terraform/g' .gitignore
+   
+}
+
+initialize_root_module() {
+
+  echo "Creating missing core files"
+  echo ...
+
+  [[ -f terraform_backend.tf ]] \
+    && echo "File already exists: terraform_backend.tf" \
+    ||  write_terraform_backend
+
+  [[ -f terraform_standard_variables.tf ]] \
+    && echo "File already exists: terraform_standard_variables.tf" \
+    ||  write_terraform_standard_variables
+
+  [[ -f dev-us-east-1.tfvars ]] \
+    && echo "File already exists: dev-us-east-1.tfvars" \
+    ||  write_dev_east_tfvars
+
+  spacer
+
+  exit 0
+}
+
+clone_templates_repository() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Cloning the templates repo ..."
+
+  ##delete the repo and clone it fresh each time to avoid issues:
+    rm -rf ${clone_path}
+    git clone ${modules_repo_url} ${clone_path} > /dev/null
+
+  ##cd, checkout master, pull, cd back:
+    cd ${modules_template_path} &>/dev/null
+    git checkout master &>/dev/null
+    git pull &>/dev/null
+    cd - &>/dev/null
+}
+
+set_templates_repository_branch() {
+  cd ${modules_template_path} &>/dev/null
+  git checkout master &>/dev/null
+  git pull &>/dev/null
+
+  ## checkout the request branch:
+  echo "Requested templates branch: $requested_templates_branch"
+  [[ $requested_templates_branch == "latest_version_tag" ]] \
+    && requested_templates_branch=$(git describe --abbrev=0)
+  
+  git checkout $request_templates_branch &>/dev/null
+  cd - &>/dev/null
+
+  [[ "${verbose}" == "true" ]] \
+    && echo "Requested templates branch: $branch_tag"
+}
+
+list_available_modules() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Listing available modules ..."
+
+  spacer
+  echo "This is the list of currently available terraform modules for branch '${requested_templates_branch}'"
+  echo "Please contact SRE if you would like to add more:"
+  spacer
+  ls -1 ${modules_template_path}
+  spacer
+
+  exit 0
+}
+
+add_module() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Adding module ..."
+
+  module_name=$2  #<-- should be the second argument always
+
+  ##verify module exists:
+    [[ -d ${modules_template_path}/${module_name} ]] \
+      || { echo "No such module '${module_name}'" \
+      && exit 1 ; }
+
+  spacer
+  echo "Copying template files:"
+  echo "Module: '$module_name'"
+  echo "Branch: '$requested_templates_branch'" 
+  echo ""
+
+  ##copy -n so we don't overwrite existing files:
+    cp -n ${modules_template_path}/${module_name}/* .
+
+  spacer
+
+  ##not all modules have a _main.tf
+   #also a kludge to deal with unportable sed behavior:
+    [[ -f ${module_name}_main.tf ]] \
+    && \
+      cat ${module_name}_main.tf \
+        | sed "s/\[module_version_tag\]/${requested_templates_branch}/g" \
+        > ${module_name}_main.tf.temp \
+    && mv -f ${module_name}_main.tf.temp ${module_name}_main.tf \
+    && echo "" \
+    && echo "Module pinned at: $requested_templates_branch" \
+    && echo "Modify the ?ref in _main.tf to change this"
+
+  spacer
+
+  exit 0
+}
+
+terraform_functions() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running terraform functions ..."
+
+  set_git_variables $@
+  env_tfvars_file=$2
+  verify_initialization
+  verify_env_tfvars_file $@
+  verify_no_examples $@
+  set_env_tfvars_file_variables $@
+  set_owner_product_planfile $@
+  set_aws_variables $@
+  verify_common_tfvars_file_values $@
+  verify_aws_profile_exists $@
+  verify_gitignore
+
+  [[ "${verbose}" == "true" ]] \
+    && echo "Arguments: " \
+    && echo $@
+
+  [[ "${verbose}" == "true" ]] \
+    && display_variables $@
+}
+
+module_functions() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running module functions ..."
+
+  set_git_variables $@
+  set_module_variables $@
+}
+
+usage_short() {
+  echo "tfstack   ${tfstack_version}"
+  echo "$($terraform_binary --version | head -n 1)"
+  echo ""
+  cat <<- EOF
+Options:
+  -irm | --initialize-root-module                                  create standard backend and variables files
+  -lam | --list-available-modules             [module_branch]      list modules sourced from the ci/cd repo
+  -am  | --add-module             module_name [module_branch]      add a module from the ci/cd repo
+         --init                   tfvars_file [terraform options]  terraform init
+         --plan                   tfvars_file [terraform options]  terraform plan
+         --apply                  tfvars_file [terraform options]  terraform apply
+         --destroy                tfvars_file [terraform options]  terraform destroy
+         --import                 tfvars_file ADDRESS ID           terraform import
+  -ipa | --init-plan-apply        tfvars_file                      init, plan, apply with confirmation
+  -sl  | --state-list             tfvars_file                      terraform state list
+  -rt  | --retag-statefile        tfvars_file                      retag the statefile with git metadata
+  -s   | --status                 tfvars_file                      show the status of the terraform 'stack'
+  -gwi | --github-workflow-init   tfvars_file [module_branch]      install a stock github workflow file to .github/workflows
+  -tv  | --terraform-version-tag              <version-tag>        specify a major.minor terraform version
+  -tb  | --terraform-binary                   </path/to/binary>    specify the full path to the terraform binary
+         --verbose                                                 provide more output
+  -h   | --help                                                    usage
+  -v   | --version                                                 display the versions of tfstack and terraform
+EOF
+}
+
+display_readme() {
+less <<- EOF
+tfstack                        SRE Team Manual                       tfstack
+
+
+NAME
+     tfstack -- manage terraform "stacks"
+
+OPTIONS
+     -irm | --initialize-root-module                                  create standard backend and variables files
+     -lam | --list-available-modules             [module_branch]      list modules sourced from the ci/cd repo
+     -am  | --add-module             module_name [module_branch]      add a module from the ci/cd repo
+            --init                   tfvars_file [terraform options]  terraform init
+            --plan                   tfvars_file [terraform options]  terraform plan
+            --apply                  tfvars_file [terraform options]  terraform apply
+            --destroy                tfvars_file [terraform options]  terraform destroy
+            --import                 tfvars_file ADDRESS ID           terraform import
+     -ipa | --init-plan-apply        tfvars_file                      init, plan, apply with confirmation
+     -sl  | --state-list             tfvars_file                      terraform state list
+     -rt  | --retag-statefile        tfvars_file                      retag the statefile with git metadata
+     -s   | --status                 tfvars_file                      show the status of the terraform 'stack'
+     -gwi | --github-workflow-init   tfvars_file [module_branch]      install a stock github workflow file to .github/workflows
+     -tv  | --terraform-version-tag              <version-tag>        specify a major.minor terraform version
+     -tb  | --terraform-binary                   </path/to/binary>    specify the full path to the terraform binary
+            --verbose                                                 provide more output
+     -h   | --help                                                    usage
+     -v   | --version                                                 display the versions of tfstack and terraform
+
+DESCRIPTION
+     The tfstack command manages terraform "stacks". It pulls
+     values from the given <env>-<region>.tfvars file and uses these to
+     determine the AWS profile and region in which to create
+     resources. You should start with an empty directory.
+
+CREDENTIALS
+     This script relies on you having a ~/.aws/credentials file with
+     valid credentials for the environment you are using. You may use
+     single sign-on credentials, but they need to be pasted into your
+     credentials file to work, it's how tfstack is able to tell which
+     profile to use. Exporting the credentials as an environmental 
+     variable won't work, because there is no way for a script to know
+     which environment is configured for the exported credentials.
+
+INITIALIZATION
+     1. Run --initialize-root-module. This will place some required
+        'core' files into your empty directory.
+
+     2. Run --list-available-modules to obtain a list of modules
+        which will work with tfstack. If you are building a new
+        module in the github repo cicd-templates, you may specify
+        a branch with this option. If you do not see a module listed
+        here that you want, you should put in a ticket with SRE.
+
+     3. Run --add-module to add the module you want. You may also
+        specify a branch, and you may add multiple modules, though
+        please be aware you may need to chase down instances of
+        multiple variables declarations. 
+
+     4. Modify all EXAMPLE values and provide 'real' values. 
+        Then run the --init, --plan and --apply options 
+        using the appropriate <env>-<region>.tfvars 
+        file as an argument. 
+
+     5. Run --github-workflow-init tfvars_file to copy and configure a basic
+        terraform github workflow file under the root of your repository
+        at .github/workflows. This file will run in the environment and region
+        defined in your tfvars_file. You should run it once per tfvars_file.
+        The default workflow behavior will be to run when the contents of your
+        root module folder change and are checked in under a branch corresponding
+        to your environment (dev workflow runs from dev branch).
+
+
+USAGE
+     The following options are available:
+
+     -irm | --initialize-root-module
+                - Copies core files needed to manage a terraform module. These files and tfstack
+                  will manage the terraform S3 backend, declare some standard variables and provide
+                  a most basic <env>-<region>.tfvars file which will work in our DEV AWS account, in
+                  the us-east-1 region. You will need to replace any EXAMPLE values in those files 
+                  with 'real' values.
+
+     -lam | --list-available-modules
+                - Checks out our github repository 'cicd-template' into /tmp/. Lists modules there which
+                  have core template files available to populate your root module. You will need to 
+                  replace any EXAMPLE values in those files 
+                  with 'real' values.
+     -i | --init
+                - Runs terraform init.
+                  Append supported terraform init arguments at the end.
+
+     -p | --plan
+                - Runs terraform plan. This creates the plan.
+                  Runs a number of verification steps.
+                  Append supported terraform plan arguments at the end.
+
+     -a | --apply
+                - Runs terraform apply.
+                  Runs a number of verification steps.
+                  Append supported terraform apply arguments at the end.
+
+     -d | --destroy
+                - Runs terraform init. This safeguards the remote state file.
+                  Runs terraform destroy.
+                  Runs a number of verification steps.
+
+     -ipa | --init-plan-apply
+                - Runs terraform init, terraform plan and terraform apply.
+                  This option prompts you before applying so you have a
+                  chance to review the plan. This is the fastest option
+                  which uses default terraform options.
+                  Accepts a -y argument for auto-approval
+
+     --import
+                - Runs terraform init. This safeguards the remote state file.
+                  Runs terraform import.
+
+     --state-list
+                - Returns a list of resources via terraform state list
+
+     -rt | --retag-statefile
+                - Retags the state file. Use after merging or pushing code,
+                  when no changes are happening to resources.
+
+     --status
+                - Returns the status of the terraform 'stack'.
+                  Applied: resources exist
+                  Destroyed: resources have been destroyed
+                  No state file: resources have not been created yet
+
+     -tv | --terraform-version-tag
+                - Specify a major.minor version 'tag' of terraform to use.
+                  Appends the tag to $(which terraform).
+                  Assuming terraform is installed at /usr/local/bin/terraform,
+                  specifying -tv 0.14 will tell tfstack to use this binary:
+                  /usr/local/bin/terraform-0.14
+                  Example: tfstack --init dev-us-east-1.tfvars -tv 0.14
+
+     -tb | --terraform-binary /path/to/terraform/binary
+                - Specify the path to the binary you would like to use.
+                  Example: tfstack --init dev-us-east-1.tfvars -tb /usr/local/bin/terraform-0.15.2
+                  
+     -h | --help
+                - Displays this help screen
+
+     -v | --version
+                - Displays the version of tfstack and the version of terraform
+
+
+VARIABLES
+
+  Environment:
+       DEV
+       QA
+       PRODUCTION
+       ETC ...
+
+  Name:
+       For Tagging. May be used to create other Tags.
+
+  Owner:
+       Email contact for department or product/project.
+
+  Product:
+       Per the wiki. Examples include:
+       KPlus
+
+EXAMPLES
+     Commands:
+       tfstack --initialize-root-module
+       tfstack --add-module s3_bucket
+
+       [ modify EXAMPLE values in the files ]
+
+       tfstack --init dev-us-east-1.tfvars
+       tfstack --plan dev-us-east-1.tfvars
+       tfstack --apply dev-us-east-1.tfvars
+         or all in one step, with a prompt:
+       tfstack -ipa dev-us-east-1.tfvars
+
+Questions?  Please contact goody
+
+
+EOF
+}
+
+get_terraform_resource_status() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Running get_terraform_resource_status ..."
+
+  remote_statefile=$( \
+    aws s3 ls s3://${state_bucket}/${backend_key} \
+      --profile ${profile} \
+      --region ${region}
+  )
+
+  [[ -z ${remote_statefile} ]] \
+    && spacer \
+    && { echo "Resource Status: No state file" \
+    && exit 0 ; }
+
+  statefile_tags=$( \
+    aws s3api get-object-tagging \
+      --bucket ${state_bucket} \
+      --key ${backend_key} \
+      --profile ${profile} \
+      --region ${region} \
+      | egrep 'Key|Value' \
+      | cut -d\" -f 4 \
+      | sed '$!N;s/\n/ /' \
+      | column -t \
+  )
+  echo "State File Tags:"
+  echo ""
+  echo "${statefile_tags}"
+}
+
+main() {
+
+  verbose="false"
+  echo $@ | grep -q "\-\-verbose" \
+    && verbose="true"
+
+  ## set the terraform binary:
+  determine_terraform_binary $@
+
+  spacer
+
+  case "$1" in
+    -i| --init)
+      terraform_functions $@
+      custom_arguments $@
+      terraform_init $@
+      ;;
+    -p| --plan)
+      terraform_functions $@
+      custom_arguments $@
+      terraform_validate
+      terraform_plan $@
+      ;;
+    -a| --apply)
+      terraform_functions $@
+      custom_arguments $@
+      terraform_apply $@
+      ;;
+    -d| --destroy)
+      terraform_functions $@
+      custom_arguments $@
+      terraform_init $@
+      terraform_destroy $@
+      ;;
+    -ipa| --init-plan-apply)
+      terraform_functions $@
+      custom_arguments $@
+      terraform_init $@
+      terraform_validate
+      terraform_plan $@
+      terraform_apply $@
+      ;;
+    -ipaa| --init-plan-apply-autoapprove)
+      terraform_functions $@
+      custom_arguments $@
+      terraform_init $@
+      terraform_validate
+      terraform_plan $@
+      terraform_apply $@ -y
+      ;;
+    -irm| --initialize-root-module)
+      initialize_root_module $@
+      verify_gitignore
+      ;;
+    -lam| --list-available-modules)
+      module_functions $@
+      clone_templates_repository
+      requested_templates_branch=latest_version_tag
+      [[ -n $2 ]] && [[ $3 != "--verbose" ]] && requested_templates_branch=$2
+      set_templates_repository_branch $requested_templates_branch
+      list_available_modules $requested_templates_branch
+      set_templates_repository_branch master  #<-- leave the templates repo in a known state
+      ;;
+    -am| --add-module)
+      module_functions $@
+      clone_templates_repository
+      requested_templates_branch=latest_version_tag
+      [[ -n $3 ]] && [[ $3 != "--verbose" ]] && requested_templates_branch=$3
+      set_templates_repository_branch $requested_templates_branch
+      add_module $@ $requested_templates_branch
+      set_templates_repository_branch master  #<-- leave the templates repo in a known state
+      ;;
+    -gwi| --github-workflow-init)
+      module_functions $@
+      env_tfvars_file=$2
+      verify_env_tfvars_file $@
+      clone_templates_repository
+      requested_templates_branch=latest_version_tag
+      [[ -n $2 ]] && [[ $3 != "--verbose" ]] && requested_templates_branch=$2
+      set_templates_repository_branch $requested_templates_branch
+      github_workflow_file $@
+      set_templates_repository_branch master  #<-- leave the templates repo in a known state
+      ;;
+    --import)
+      terraform_functions $@
+      custom_arguments $@
+      terraform_validate
+      terraform_import $@
+      ;;
+    --state-list)
+      terraform_functions $@
+      custom_arguments $@
+      terraform_state_list $@
+      ;;
+    -rt| --retag-statefile)
+      terraform_functions $@
+      terraform_init $@
+      get_terraform_resource_status $@
+      tag_remote_statefile $@
+      get_terraform_resource_status $@
+      ;;
+    -s| --status)
+      terraform_functions $@
+      get_terraform_resource_status $@
+      ;;
+    -h| --help)
+      display_readme
+      exit 0
+      ;;
+    -v| --version)
+      echo "$(basename $0)   ${tfstack_version}"
+      echo $($terraform_binary --version | head -n 1)
+      exit 0
+      ;;
+    *)
+      usage_short
+      exit 1
+  esac
+}
+
+main $@
+
+
+exit 0
+
