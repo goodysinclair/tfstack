@@ -1,0 +1,27 @@
+name: 'tfstack plan'
+
+on:
+ push:
+   branches:
+   - 'AWS_ENVIRONMENT'
+   paths:
+   - '**TERRAFORM_ROOT_MODULE_DIRECTORY**'
+env:
+
+  TERRAFORM_VERSION_TAG: "0.14" #<-- choose a version here, assumes a terraform binary with naming convention 'terraform-MAJOR.minor'
+  TF_ROOT_MODULE_DIRECTORY: "TERRAFORM_ROOT_MODULE_DIRECTORY"
+
+jobs:
+  plan:
+    runs-on: generic-runner
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v2
+      - name: 'init-plan'
+        run: |
+          cd ${{env.TF_ROOT_MODULE_DIRECTORY}}
+          export TF_IN_AUTOMATION=true
+          tfvars_file=AWS_ENVIRONMENT-us-east-1.tfvars
+          tfstack --init $tfvars_file -tv ${{env.TERRAFORM_VERSION_TAG}} > /dev/null
+          tfstack --plan $tfvars_file -tv ${{env.TERRAFORM_VERSION_TAG}}
+

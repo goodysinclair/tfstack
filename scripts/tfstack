@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tfstack_version='v0.6.12'
+tfstack_version='v0.7.1'
 management_method=tfstack
 
 ##todo:
@@ -12,6 +12,21 @@ management_method=tfstack
 
 spacer() {
   echo "======================================================================="
+}
+
+## SET THESE variables per your Organization:
+set_module_variables() {
+  [[ "${verbose}" == "true" ]] \
+    && spacer \
+    && echo "Setting the module variables ..."
+
+  modules_repo_url="git@github.com:goodysinclair/tfstack.git"
+  modules_repo_name="tfstack"
+  clone_directory="/tmp/tfstack_terraform_templates"
+  clone_path="${clone_directory}/${modules_repo_name}"
+  modules_path="${clone_path}/terraform/modules"
+  modules_template_path="${clone_path}/terraform/tfstack_root_module_templates"
+  github_workflows_path="${clone_path}/cicd/github_workflow_templates"
 }
 
 custom_arguments() {
@@ -92,21 +107,6 @@ verify_no_examples() {
     && echo "" \
     && echo "${ex_files}" | column -t \
     && { exit 1 ; }
-}
-
-set_module_variables() {
-  [[ "${verbose}" == "true" ]] \
-    && spacer \
-    && echo "Setting the module variables ..."
-
-  modules_repo_url="git@SOMEREPO"
-  modules_repo_name="cicd-templates"
-  clone_directory="/tmp/github_terraform_templates"
-  clone_path="${clone_directory}/${modules_repo_name}"
-  modules_path="${clone_path}/terraform/modules"
-  modules_template_path="${clone_path}/terraform/tfstack_root_module_templates"
-  github_workflows_path="${clone_path}/ci-cd-templates/github_workflow_templates"
-  github_workflow_file="github_workflow_template.yaml"
 }
 
 set_git_variables() {
@@ -265,7 +265,7 @@ terraform_validate() {
     || exit 1
 }
 
-github_workflow_file() {
+github_workflows() {
   [[ "${verbose}" == "true" ]] \
     && spacer \
     && echo "Adding github workflow file ..."
@@ -278,11 +278,13 @@ github_workflow_file() {
       || mkdir -p ${git_repo_root_folder}/.github/workflows
 
   ##'copy' the workflow file with some substitutions:
-    cat ${github_workflows_path}/${github_workflow_file} \
-      | sed "s/TERRAFORM_ROOT_MODULE_DIRECTORY/${cwd}/g" \
-      | sed "s/AWS_ENVIRONMENT/${environment_lc}/g" \
-      | sed "s/AWS_REGION/${region}/g" \
-      > ${git_repo_root_folder}/.github/workflows/${environment_lc}-${region}-${cwd}.yaml
+    for i in $(ls ${github_workflows_path}/) ; do
+      cat ${github_workflows_path}/${i} \
+        | sed "s/TERRAFORM_ROOT_MODULE_DIRECTORY/${cwd}/g" \
+        | sed "s/AWS_ENVIRONMENT/${environment_lc}/g" \
+        | sed "s/AWS_REGION/${region}/g" \
+        > ${git_repo_root_folder}/.github/workflows/${environment_lc}-${region}-${cwd}.yaml
+    done
 }
 
 check_uncommitted() {
@@ -595,7 +597,7 @@ variable "owner" {
 }
 variable "product" {
   default     = "EXAMPLE_product"
-  description = "Choose a correct one from sre-standards github repo"
+  description = "Choose a correct one from the Standards repo"
 }
 
 ##########################
@@ -722,7 +724,7 @@ list_available_modules() {
 
   spacer
   echo "This is the list of currently available terraform modules for branch '${requested_templates_branch}'"
-  echo "Please contact SRE if you would like to add more:"
+  echo "Please contact your IT dept if you would like to add more:"
   spacer
   ls -1 ${modules_template_path}
   spacer
@@ -833,7 +835,7 @@ EOF
 
 display_readme() {
 less <<- EOF
-tfstack                        SRE Team Manual                       tfstack
+tfstack                             Manual                            tfstack
 
 
 NAME
@@ -882,7 +884,7 @@ INITIALIZATION
         which will work with tfstack. If you are building a new
         module in the github repo cicd-templates, you may specify
         a branch with this option. If you do not see a module listed
-        here that you want, you should put in a ticket with SRE.
+        here that you want, you should put in a ticket with your IT dept.
 
      3. Run --add-module to add the module you want. You may also
         specify a branch, and you may add multiple modules, though
@@ -1129,7 +1131,7 @@ main() {
       requested_templates_branch=latest_version_tag
       [[ -n $2 ]] && [[ $3 != "--verbose" ]] && requested_templates_branch=$2
       set_templates_repository_branch $requested_templates_branch
-      github_workflow_file $@
+      github_workflows $@
       set_templates_repository_branch master  #<-- leave the templates repo in a known state
       ;;
     --import)
