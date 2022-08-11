@@ -882,8 +882,8 @@ INITIALIZATION
 
      2. Run --list-available-modules to obtain a list of modules
         which will work with tfstack. If you are building a new
-        module in the github repo cicd-templates, you may specify
-        a branch with this option. If you do not see a module listed
+        module, you may speicfy a branch with this option.
+        If you do not see a module listed
         here that you want, you should put in a ticket with your IT dept.
 
      3. Run --add-module to add the module you want. You may also
@@ -916,7 +916,7 @@ USAGE
                   with 'real' values.
 
      -lam | --list-available-modules
-                - Checks out our github repository 'cicd-template' into /tmp/. Lists modules there which
+                - Checks out the github module repository into /tmp. Lists modules there which
                   have core template files available to populate your root module. You will need to 
                   replace any EXAMPLE values in those files 
                   with 'real' values.
