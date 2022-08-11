@@ -699,7 +699,7 @@ clone_templates_repository() {
 
   ##cd, checkout $default_modules_branch, pull, cd back:
     git checkout $default_modules_branch &>/dev/null
-    git pull &>/dev/null
+    git pull --ff-only &>/dev/null
     cd - &>/dev/null
 }
 
@@ -709,12 +709,10 @@ set_templates_repository_branch() {
   git pull &>/dev/null
 
   ## checkout the requested branch:
-  echo "Requested templates branch: $requested_templates_branch"
   [[ $requested_templates_branch == "latest_version_tag" ]] \
-    && requested_templates_branch=$(git describe --abbrev=0)
+    && requested_templates_branch=$default_modules_branch
   
-  git checkout $request_templates_branch || echo "ASDFASDF"
-  #git checkout $request_templates_branch &>/dev/null
+  git checkout $requested_templates_branch &>/dev/null
   cd - &>/dev/null
 
   [[ "${verbose}" == "true" ]] \
