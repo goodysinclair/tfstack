@@ -1,0 +1,15 @@
+## Put a description of these variables here
+ # Provide an EXAMPLE value which adheres to
+ # the naming conventions of your resource.
+ # Use _ where possible but - where necessary
+
+## These variables should be the ones which change
+ # for each environment, like an instance size, 
+ # an S3 bucket name, or a set of public/private
+ # security groups
+
+## ^delete above this line^ ##
+
+example_variable_1 = "EXAMPLE_value_1"
+example_variable_2 = "EXAMPLE_value_2"
+
