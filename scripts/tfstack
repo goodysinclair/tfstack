@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tfstack_version='v0.7.3'
+tfstack_version='v0.7.4'
 management_method=tfstack
 
 ##todo:
@@ -726,7 +726,6 @@ list_available_modules() {
 
   spacer
   echo "This is the list of currently available terraform modules for branch '${requested_templates_branch}'"
-  echo "Please contact your IT dept if you would like to add more:"
   spacer
   cd ${modules_template_path}
   ls -1
@@ -886,13 +885,11 @@ INITIALIZATION
      2. Run --list-available-modules to obtain a list of modules
         which will work with tfstack. If you are building a new
         module, you may speicfy a branch with this option.
-        If you do not see a module listed
-        here that you want, you should put in a ticket with your IT dept.
 
      3. Run --add-module to add the module you want. You may also
         specify a branch, and you may add multiple modules, though
         please be aware you may need to chase down instances of
-        multiple variables declarations. 
+        multiple variable declarations. 
 
      4. Modify all EXAMPLE values and provide 'real' values. 
         Then run the --init, --plan and --apply options 
