@@ -10,20 +10,25 @@
 
 ## ^delete this line and above^ ##
 
-data "aws_ssm_parameter" "nejmgroup_environment_public_hosted_zone_name" {
-  name = "/infrastructure/route53/nejmgroup-environment.org-public-hosted-zone-name"
+data "aws_ssm_parameter" "company_environment_public_hosted_zone_name" {
+  description = "env-specific hosted zone"
+  name = "/infrastructure/route53/somecompany-environment.org-public-hosted-zone-name"
 }
-data "aws_ssm_parameter" "nejmgroup_environment_public_hosted_zone_id" {
-  name = "/infrastructure/route53/nejmgroup-environment.org-public-hosted-zone-id"
+data "aws_ssm_parameter" "somecompany_environment_public_hosted_zone_id" {
+  description = "env-specific hosted zone"
+  name = "/infrastructure/route53/somecompany-environment.org-public-hosted-zone-id"
 }
-data "aws_ssm_parameter" "nejmgroup_environment_private_hosted_zone_name" {
-  name = "/infrastructure/route53/nejmgroup-environment.org-private-hosted-zone-name"
+data "aws_ssm_parameter" "somecompany_environment_private_hosted_zone_name" {
+  description = "env-specific hosted zone"
+  name = "/infrastructure/route53/somecompany-environment.org-private-hosted-zone-name"
 }
-data "aws_ssm_parameter" "nejmgroup_environment_private_hosted_zone_id" {
-  name = "/infrastructure/route53/nejmgroup-environment.org-private-hosted-zone-id"
+data "aws_ssm_parameter" "somecompany_environment_private_hosted_zone_id" {
+  description = "env-specific hosted zone"
+  name = "/infrastructure/route53/somecompany-environment.org-private-hosted-zone-id"
 }
-data "aws_ssm_parameter" "nejmgroup_environment_certificate_arn" {
-  name = "/infrastructure/acm/nejmgroup-environment.org-arn"
+data "aws_ssm_parameter" "somecompany_environment_certificate_arn" {
+  description = "env-specific certificate"
+  name = "/infrastructure/acm/somecompany-environment.org-arn"
 }
 data "aws_ssm_parameter" "on_prem_internal_cidrs_sg_id" {
   name = "/infrastructure/on_prem_internal_cidrs_sg-id"
@@ -59,6 +64,6 @@ data "aws_ssm_parameter" "waf_acl" {
   name = "WebAclId"
 }
 data "aws_ssm_parameter" "keypair" {
-  name = "/infrastructure/ec2/sre-keypair-name"
+  name = "/infrastructure/ec2/default-keypair-name"
 }
 
