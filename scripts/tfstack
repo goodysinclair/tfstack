@@ -705,12 +705,13 @@ set_templates_repository_branch() {
   git checkout master &>/dev/null
   git pull &>/dev/null
 
-  ## checkout the request branch:
+  ## checkout the requested branch:
   echo "Requested templates branch: $requested_templates_branch"
   [[ $requested_templates_branch == "latest_version_tag" ]] \
     && requested_templates_branch=$(git describe --abbrev=0)
   
-  git checkout $request_templates_branch &>/dev/null
+  git checkout $request_templates_branch || echo "ASDFASDF"
+  #git checkout $request_templates_branch &>/dev/null
   cd - &>/dev/null
 
   [[ "${verbose}" == "true" ]] \
