@@ -103,6 +103,7 @@ verify_no_examples() {
   done
 
   [[ "count" -ge "1" ]] \
+    && spacer \
     && echo "EXAMPLE values were found:" \
     && echo "" \
     && echo "${ex_files}" | column -t \
