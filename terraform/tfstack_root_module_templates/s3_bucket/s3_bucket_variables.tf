@@ -1,14 +1,12 @@
 variable "bucket_names" {
-  description = "Bucket names per region, leave blank if not needed"
+  description = "Bucket names per region. A good convention is <product>-<env>-<region>"
   default = {
-    sis-us-east-1        = ""
-    shs-us-east-1        = ""
-    dev-us-east-1        = ""
-    qa-us-east-1         = ""
-    production-us-east-1 = ""
-    uccdev-us-east-1     = ""
-    uccqa-us-east-1      = ""
-    uccprod-us-east-1    = ""
+    dev-us-east-1  = "EXAMPLE_unique_dev_bucket_name-us-east-1"
+    dev-us-west-2  = "EXAMPLE_unique_dev_bucket_name-us-west-2"
+    qa-us-east-1   = "EXAMPLE_unique_qa_bucket_name-us-east-1"
+    qa-us-west-2   = "EXAMPLE_unique_qa_bucket_name-us-west-2"
+    prod-us-east-1 = "EXAMPLE_unique_prod_bucket_name-us-east-1"
+    prod-us-west-2 = "EXAMPLE_unique_prod_bucket_name-us-west-2"
   }
 }
 variable "versioning" {

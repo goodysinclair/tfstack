@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tfstack_version='v0.7.1'
+tfstack_version='v0.7.4'
 management_method=tfstack
 
 ##todo:
@@ -103,6 +103,7 @@ verify_no_examples() {
   done
 
   [[ "count" -ge "1" ]] \
+    && spacer \
     && echo "EXAMPLE values were found:" \
     && echo "" \
     && echo "${ex_files}" | column -t \
@@ -693,24 +694,26 @@ clone_templates_repository() {
     rm -rf ${clone_path}
     git clone ${modules_repo_url} ${clone_path} > /dev/null
 
-  ##cd, checkout master, pull, cd back:
+  ##set default modules branch:
     cd ${modules_template_path} &>/dev/null
-    git checkout master &>/dev/null
-    git pull &>/dev/null
+    default_modules_branch=$(git branch | cut -d\  -f 2)
+
+  ##cd, checkout $default_modules_branch, pull, cd back:
+    git checkout $default_modules_branch &>/dev/null
+    git pull --ff-only &>/dev/null
     cd - &>/dev/null
 }
 
 set_templates_repository_branch() {
   cd ${modules_template_path} &>/dev/null
-  git checkout master &>/dev/null
+  git checkout $default_modules_branch &>/dev/null
   git pull &>/dev/null
 
-  ## checkout the request branch:
-  echo "Requested templates branch: $requested_templates_branch"
+  ## checkout the requested branch:
   [[ $requested_templates_branch == "latest_version_tag" ]] \
-    && requested_templates_branch=$(git describe --abbrev=0)
+    && requested_templates_branch=$default_modules_branch
   
-  git checkout $request_templates_branch &>/dev/null
+  git checkout $requested_templates_branch &>/dev/null
   cd - &>/dev/null
 
   [[ "${verbose}" == "true" ]] \
@@ -724,9 +727,9 @@ list_available_modules() {
 
   spacer
   echo "This is the list of currently available terraform modules for branch '${requested_templates_branch}'"
-  echo "Please contact your IT dept if you would like to add more:"
   spacer
-  ls -1 ${modules_template_path}
+  cd ${modules_template_path}
+  ls -1
   spacer
 
   exit 0
@@ -883,13 +886,11 @@ INITIALIZATION
      2. Run --list-available-modules to obtain a list of modules
         which will work with tfstack. If you are building a new
         module, you may speicfy a branch with this option.
-        If you do not see a module listed
-        here that you want, you should put in a ticket with your IT dept.
 
      3. Run --add-module to add the module you want. You may also
         specify a branch, and you may add multiple modules, though
         please be aware you may need to chase down instances of
-        multiple variables declarations. 
+        multiple variable declarations. 
 
      4. Modify all EXAMPLE values and provide 'real' values. 
         Then run the --init, --plan and --apply options 
@@ -1112,7 +1113,7 @@ main() {
       [[ -n $2 ]] && [[ $3 != "--verbose" ]] && requested_templates_branch=$2
       set_templates_repository_branch $requested_templates_branch
       list_available_modules $requested_templates_branch
-      set_templates_repository_branch master  #<-- leave the templates repo in a known state
+      set_templates_repository_branch $default_modules_branch  #<-- leave the templates repo in a known state
       ;;
     -am| --add-module)
       module_functions $@
@@ -1121,7 +1122,7 @@ main() {
       [[ -n $3 ]] && [[ $3 != "--verbose" ]] && requested_templates_branch=$3
       set_templates_repository_branch $requested_templates_branch
       add_module $@ $requested_templates_branch
-      set_templates_repository_branch master  #<-- leave the templates repo in a known state
+      set_templates_repository_branch $default_modules_branch  #<-- leave the templates repo in a known state
       ;;
     -gwi| --github-workflow-init)
       module_functions $@
@@ -1132,7 +1133,7 @@ main() {
       [[ -n $2 ]] && [[ $3 != "--verbose" ]] && requested_templates_branch=$2
       set_templates_repository_branch $requested_templates_branch
       github_workflows $@
-      set_templates_repository_branch master  #<-- leave the templates repo in a known state
+      set_templates_repository_branch $default_modules_branch  #<-- leave the templates repo in a known state
       ;;
     --import)
       terraform_functions $@
