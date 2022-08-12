@@ -14,5 +14,5 @@ First, the modules themselves, and secondly, a 'tfstack' root module directory.
 To install, put in a directory in your PATH.
 
 For help, run the script with the --help argument:   
-> tfstack --help   
+> ```tfstack --help```   
 
