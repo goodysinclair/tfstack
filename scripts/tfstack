@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tfstack_version='v0.7.4'
+tfstack_version='v0.7.5'
 management_method=tfstack
 
 ##todo:
@@ -711,7 +711,7 @@ set_templates_repository_branch() {
 
   ## checkout the requested branch:
   [[ $requested_templates_branch == "latest_version_tag" ]] \
-    && requested_templates_branch=$default_modules_branch
+    && requested_templates_branch=$(git describe --abbrev=0)
   
   git checkout $requested_templates_branch &>/dev/null
   cd - &>/dev/null
