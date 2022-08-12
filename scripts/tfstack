@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tfstack_version='v0.7.6g'
+tfstack_version='v0.7.7g'
 management_method=tfstack
 
 ##todo:
@@ -1124,6 +1124,7 @@ main() {
       ;;
     -gwi| --github-workflow-init)
       module_functions $@
+      terraform_functions $@
       env_tfvars_file=$2
       verify_env_tfvars_file $@
       clone_templates_repository
