@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tfstack_version='v0.7.5'
+tfstack_version='v0.7.5g'
 management_method=tfstack
 
 ##todo:
@@ -535,12 +535,12 @@ tag_remote_statefile() {
 }
 
 write_dev_east_tfvars() {
-  cat << EOF > dev-us-east-1.tfvars
-environment = "dev"
+  cat << EOF > goody-us-east-1.tfvars #GOODY
+environment = "goody" #GOODY
 region      = "us-east-1"
 
 EOF
-  basename dev-us-east-1.tfvars
+  basename goody-us-east-1.tfvars #GOODY
 }
 
 write_terraform_backend() {
