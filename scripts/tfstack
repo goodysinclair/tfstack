@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tfstack_version='v0.7.5'
+tfstack_version='v0.7.6g'
 management_method=tfstack
 
 ##todo:
@@ -278,14 +278,12 @@ github_workflows() {
     [[ -d ${git_repo_root_folder}/.github/workflows/ ]] \
       || mkdir -p ${git_repo_root_folder}/.github/workflows
 
-  ##'copy' the workflow file with some substitutions:
-    for i in $(ls ${github_workflows_path}/) ; do
-      cat ${github_workflows_path}/${i} \
-        | sed "s/TERRAFORM_ROOT_MODULE_DIRECTORY/${cwd}/g" \
-        | sed "s/AWS_ENVIRONMENT/${environment_lc}/g" \
-        | sed "s/AWS_REGION/${region}/g" \
-        > ${git_repo_root_folder}/.github/workflows/${environment_lc}-${region}-${cwd}.yaml
-    done
+  ##'copy' the workflow files with some substitutions:
+    cat ${github_workflows_path}/tfstack.yaml \
+      | sed "s/TERRAFORM_ROOT_MODULE_DIRECTORY/${cwd}/g" \
+      | sed "s/AWS_ENVIRONMENT/${environment_lc}/g" \
+      | sed "s/AWS_REGION/${region}/g" \
+      > ${git_repo_root_folder}/.github/workflows/${environment_lc}-${region}-${cwd}-tfstack.yaml
 }
 
 check_uncommitted() {
@@ -535,12 +533,12 @@ tag_remote_statefile() {
 }
 
 write_dev_east_tfvars() {
-  cat << EOF > dev-us-east-1.tfvars
-environment = "dev"
+  cat << EOF > goody-us-east-1.tfvars #GOODY
+environment = "goody" #GOODY
 region      = "us-east-1"
 
 EOF
-  basename dev-us-east-1.tfvars
+  basename goody-us-east-1.tfvars #GOODY
 }
 
 write_terraform_backend() {
