@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tfstack_version='v0.7.5g'
+tfstack_version='v0.7.6g'
 management_method=tfstack
 
 ##todo:
