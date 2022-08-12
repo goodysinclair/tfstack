@@ -11,4 +11,8 @@ One nice benefit of this script is the ability to add modules easily.
 The script is meant to work with a modules repository in two parts.   
 First, the modules themselves, and secondly, a 'tfstack' root module directory.   
 
+To install, put in a directory in your PATH.
+
+For help, run the script with the --help argument:   
+> tfstack --help   
 
